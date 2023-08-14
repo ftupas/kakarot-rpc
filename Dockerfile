@@ -1,4 +1,8 @@
-FROM rust:1.64 as builder
+# Define ARG for build platform
+FROM --platform=$BUILDPLATFORM rust:1.64 as builder
+
+# Set ARG for build platform
+ARG BUILDPLATFORM
 
 # Set working directory
 WORKDIR /usr/src/rpc
@@ -6,10 +10,31 @@ WORKDIR /usr/src/rpc
 # Copy source code
 COPY . .
 
-RUN rustup self update
-
-# Build the application
-RUN cargo build --all --release
+# Add targets and install compilers based on build platform
+# Then build the application for the target platform
+RUN rustup self update && \
+    case "$BUILDPLATFORM" in \
+        "linux/amd64") \
+            rustup target add x86_64-unknown-linux-gnu; \
+            apt-get update && apt-get -y install gcc-x86-64-linux-gnu; \
+            cargo build --all --release \
+              --target=x86_64-unknown-linux-gnu \
+              --config target.x86_64-unknown-linux-gnu.linker=\"x86_64-linux-gnu-gcc\"; \
+            cp /usr/src/rpc/target/x86_64-unknown-linux-gnu/release/kakarot-rpc /usr/src/rpc/target/release/; \
+            ;; \
+        "linux/arm64") \
+            rustup target add aarch64-unknown-linux-gnu; \
+            apt-get update && apt-get -y install gcc-aarch64-linux-gnu; \
+            cargo build --all --release \
+              --target=aarch64-unknown-linux-gnu \
+              --config target.aarch64-unknown-linux-gnu.linker=\"aarch64-linux-gnu-gcc\"; \
+            cp /usr/src/rpc/target/aarch64-unknown-linux-gnu/release/kakarot-rpc /usr/src/rpc/target/release/; \
+            ;; \
+        *) \
+            echo "Unknown BUILDPLATFORM: $BUILDPLATFORM"; \
+            exit 1; \
+            ;; \
+    esac
 
 # Create a new container from scratch to reduce image size
 FROM debian:bullseye
